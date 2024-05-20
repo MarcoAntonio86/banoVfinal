@@ -116,23 +116,23 @@ class Banco:
     def sacar(self, valor):
         if self.usuario_logado:
             if valor > 0:
-                saldo_disponivel = self.saldo + self.cheque  # Verifica o saldo total disponível (saldo + cheque especial)
+                saldo_disponivel = self.saldo + self.chequeEspecial  # Corrigindo o nome da variável
                 if valor > saldo_disponivel:
                     messagebox.showerror("Erro", "Valor de saque excede o saldo e o limite do cheque especial.")
                 else:
                     if valor > self.saldo:
-                        # Calcula o valor restante para sacar do cheque especial
-                        valor_restante = valor - self.saldo
+                        # Saque do cheque especial
+                        self.chequeEspecial -= valor - self.saldo
                         self.saldo = 0
-                        self.cheque -= valor_restante  # Atualiza o saldo do cheque especial
-                        self.saldo -= valor_restante  # "Choque" do valor do cheque especial para o saldo
                     else:
+                        # Saque do saldo normal
                         self.saldo -= valor
+
                     self.extrato += f"Saque: R$ {valor:.2f}\n"
                     self.numero_saques += 1
-    
+
                     query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
-                    valores = (self.saldo, self.cheque, self.usuarios.get('cpf'))
+                    valores = (self.saldo, self.chequeEspecial, self.usuarios.get('cpf'))
                     try:
                         self.cursor.execute(query, valores)
                         self.conexao.commit()
@@ -143,7 +143,7 @@ class Banco:
                 messagebox.showerror("Erro", "Valor de saque inválido.")
         else:
             messagebox.showerror("Erro", "Efetue o login para realizar o saque.")
-    
+
 
     def sair(self):
         messagebox.showinfo("Sair", "Saindo do sistema.")
