@@ -20,7 +20,9 @@ class Banco:
         self.extrato = ""
         self.numero_saques = 0
         self.LIMITE_SAQUES = 3
- 
+        self.chequeI = 0
+        
+
         self.criar_tabela_usuarios()
  
     def criar_tabela_usuarios(self):
@@ -66,6 +68,7 @@ class Banco:
        
         try:
             query = "INSERT INTO usuarios (nome, cpf, senha, Saldo, ChequeEspecial ) VALUES (%s, %s, %s, %s, %s)"
+            self.chequeI = saldo
             self.limite = saldo*4 + saldo
             self.cheque = saldo*4
             valores = (nome, cpf, senha, saldo, self.cheque)
@@ -102,10 +105,11 @@ class Banco:
                 self.cursor.execute(query, valores)
                 saldo, chequeEspecial = self.cursor.fetchone()
                 self.saldo = saldo
-                self.chequeEspecial = chequeEspecial  # Atualiza o valor do cheque especial
+                self.chequeEspecial = chequeEspecial
 
-                extrato = f"Saldo atual: R$ {saldo:.2f}\n"
-                extrato += self.extrato  # Adiciona o extrato anterior
+                extrato = f"Saldo atual: R$ {self.saldo:.2f}\n"
+                extrato += f"Cheque Especial disponível: R$ {self.chequeEspecial:.2f}\n"
+                extrato += self.extrato
                 print("\n================= Extrato ==================")
                 print(extrato)
                 print("============================================")
@@ -116,14 +120,15 @@ class Banco:
     def sacar(self, valor):
         if self.usuario_logado:
             if valor > 0:
-                saldo_disponivel = self.saldo + self.chequeEspecial  # Corrigindo o nome da variável
+                saldo_disponivel = self.saldo + self.chequeEspecial
                 if valor > saldo_disponivel:
                     messagebox.showerror("Erro", "Valor de saque excede o saldo e o limite do cheque especial.")
                 else:
                     if valor > self.saldo:
                         # Saque do cheque especial
-                        self.chequeEspecial -= valor - self.saldo
-                        self.saldo = 0
+                        diferenca = valor - self.saldo
+                        self.saldo = -diferenca
+                        self.chequeEspecial -= diferenca
                     else:
                         # Saque do saldo normal
                         self.saldo -= valor
@@ -157,16 +162,17 @@ class Banco:
                 messagebox.showerror("Erro", "Valor inválido.")
                 return
             if valor > 0:
-                saldo_disponivel = self.saldo + self.chequeEspecial  # ChequeEspecial deve ser usado
+                saldo_disponivel = self.saldo + self.chequeEspecial
                 if valor > saldo_disponivel:
                     messagebox.showerror("Erro", "Valor da transferência excede o saldo e o limite do cheque especial.")
                 else:
                     if valor > self.saldo:
-                        valor_restante = valor - self.saldo
-                        self.chequeEspecial -= valor_restante  # Atualiza o saldo do cheque especial
-                        self.saldo = 0
+                        diferenca = valor - self.saldo
+                        self.saldo = -diferenca
+                        self.chequeEspecial -= diferenca
                     else:
                         self.saldo -= valor
+
                     self.extrato += f"Transferência: R$ {valor:.2f} para CPF: {destino}\n"
                     query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
                     valores = (self.saldo, self.chequeEspecial, self.usuarios.get('cpf'))
@@ -338,25 +344,21 @@ class Interface:
         top.title("Extrato")
 
         if self.banco.usuario_logado:
-            self.banco.fExtrato()  # Chama o método para atualizar o saldo e obter o extrato
-            # Exibição do saldo
+            self.banco.fExtrato()
             saldo_label = tk.Label(top, text=f"Saldo atual: R$ {self.banco.saldo:.2f}")
             saldo_label.pack()
 
-            saldo_especialLabel = tk.Label(top, text=f"Cheque Especial: R$ {self.banco.chequeEspecial:.2f}")
-            saldo_especialLabel.pack()
+            saldo_especial_label = tk.Label(top, text=f"Cheque Especial disponível: R$ {self.banco.chequeEspecial:.2f}")
+            saldo_especial_label.pack()
 
-            # Exibição do extrato
             extrato_label = tk.Label(top, text="Extrato:")
             extrato_label.pack()
 
             extrato_text = tk.Text(top, height=10, width=50)
             extrato_text.pack()
 
-            # Adiciona o extrato ao widget de texto
             extrato_text.insert(tk.END, self.banco.extrato)
-
-            extrato_text.config(state=tk.DISABLED)  # Torna o widget somente leitura
+            extrato_text.config(state=tk.DISABLED)
         else:
             messagebox.showinfo("Erro", "Faça login primeiro para visualizar o extrato.")
 
