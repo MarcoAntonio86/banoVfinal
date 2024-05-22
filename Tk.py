@@ -125,12 +125,10 @@ class Banco:
                     messagebox.showerror("Erro", "Valor de saque excede o saldo e o limite do cheque especial.")
                 else:
                     if valor > self.saldo:
-                        # Saque do cheque especial
                         diferenca = valor - self.saldo
-                        self.saldo = -diferenca
-                        self.chequeEspecial -= diferenca
+                        self.saldo = - diferenca
+                        
                     else:
-                        # Saque do saldo normal
                         self.saldo -= valor
 
                     self.extrato += f"Saque: R$ {valor:.2f}\n"
