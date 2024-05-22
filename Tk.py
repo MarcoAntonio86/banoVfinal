@@ -151,23 +151,25 @@ class Banco:
  
     def transferir(self, destino, valor):
         if self.usuario_logado:
+            try:
+                valor = float(valor)
+            except ValueError:
+                messagebox.showerror("Erro", "Valor inválido.")
+                return
             if valor > 0:
-                saldo_disponivel = self.saldo + self.cheque  # Verifica o saldo total disponível (saldo + cheque especial)
+                saldo_disponivel = self.saldo + self.chequeEspecial  # ChequeEspecial deve ser usado
                 if valor > saldo_disponivel:
                     messagebox.showerror("Erro", "Valor da transferência excede o saldo e o limite do cheque especial.")
                 else:
                     if valor > self.saldo:
-                        # Calcula o valor restante para transferir do cheque especial
                         valor_restante = valor - self.saldo
+                        self.chequeEspecial -= valor_restante  # Atualiza o saldo do cheque especial
                         self.saldo = 0
-                        self.cheque -= valor_restante  # Atualiza o saldo do cheque especial
-                        self.saldo -= valor_restante  # "Choque" do valor do cheque especial para o saldo
                     else:
                         self.saldo -= valor
                     self.extrato += f"Transferência: R$ {valor:.2f} para CPF: {destino}\n"
-    
                     query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
-                    valores = (self.saldo, self.cheque, self.usuarios.get('cpf'))
+                    valores = (self.saldo, self.chequeEspecial, self.usuarios.get('cpf'))
                     try:
                         self.cursor.execute(query, valores)
                         self.conexao.commit()
