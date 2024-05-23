@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import Label, PhotoImage, ttk, messagebox
 import mysql.connector
@@ -35,7 +36,8 @@ class Banco:
                 cpf VARCHAR(11) UNIQUE NOT NULL,
                 senha VARCHAR(50) NOT NULL,
                 Saldo DOUBLE,
-                ChequeEspecial DOUBLE                 
+                ChequeEspecial DOUBLE,
+                ChequeInicial DOUBLE                           
             )
             """)
             print("Tabela 'usuarios' criada com sucesso!")
@@ -67,11 +69,12 @@ class Banco:
     def cadastrar_usuario(self, nome, cpf, senha, saldo):
        
         try:
-            query = "INSERT INTO usuarios (nome, cpf, senha, Saldo, ChequeEspecial ) VALUES (%s, %s, %s, %s, %s)"
-            self.chequeI = saldo
+            query = "INSERT INTO usuarios (nome, cpf, senha, Saldo, ChequeEspecial, ChequeInicial ) VALUES (%s, %s, %s, %s, %s, %s)"
+            
             self.limite = saldo*4 + saldo
             self.cheque = saldo*4
-            valores = (nome, cpf, senha, saldo, self.cheque)
+            self.chequeI = self.cheque
+            valores = (nome, cpf, senha, saldo, self.cheque, self.chequeI)
             self.cursor.execute(query, valores)
             self.conexao.commit()
             messagebox.showinfo("Cadastro", "Usuário cadastrado com sucesso!")
@@ -99,7 +102,7 @@ class Banco:
     
     def fExtrato(self):
         if self.usuario_logado:
-            query = "SELECT Saldo, ChequeEspecial FROM usuarios WHERE cpf = %s"
+            query = "SELECT Saldo, ChequeInicial FROM usuarios WHERE cpf = %s"
             valores = (self.usuarios.get('cpf'),)
             try:
                 self.cursor.execute(query, valores)
@@ -108,7 +111,7 @@ class Banco:
                 self.chequeEspecial = chequeEspecial
 
                 extrato = f"Saldo atual: R$ {self.saldo:.2f}\n"
-                extrato += f"Cheque Especial disponível: R$ {self.chequeEspecial:.2f}\n"
+                extrato += f"Cheque Especial disponível: R$ {self.chequeI:.2f}\n"
                 extrato += self.extrato
                 print("\n================= Extrato ==================")
                 print(extrato)
@@ -127,14 +130,17 @@ class Banco:
                     if valor > self.saldo:
                         diferenca = valor - self.saldo
                         self.saldo = - diferenca
+                        if self.saldo < 0:
+                            self.chequeI -= diferenca
                         
                     else:
                         self.saldo -= valor
+                   
 
                     self.extrato += f"Saque: R$ {valor:.2f}\n"
                     self.numero_saques += 1
 
-                    query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
+                    query = "UPDATE usuarios SET Saldo = %s, ChequeInicial = %s WHERE cpf = %s"
                     valores = (self.saldo, self.chequeEspecial, self.usuarios.get('cpf'))
                     try:
                         self.cursor.execute(query, valores)
@@ -167,6 +173,7 @@ class Banco:
                     if valor > self.saldo:
                         diferenca = valor - self.saldo
                         self.saldo = - diferenca
+                        self.cheque += self.saldo
                         
                     else:
                         self.saldo -= valor
