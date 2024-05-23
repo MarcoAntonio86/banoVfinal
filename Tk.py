@@ -166,8 +166,8 @@ class Banco:
                 else:
                     if valor > self.saldo:
                         diferenca = valor - self.saldo
-                        self.saldo = -diferenca
-                        self.chequeEspecial -= diferenca
+                        self.saldo = - diferenca
+                        
                     else:
                         self.saldo -= valor
 
