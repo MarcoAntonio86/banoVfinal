@@ -1,18 +1,22 @@
 import tkinter as tk
 from tkinter import Label, PhotoImage, ttk, messagebox
-import mysql.connector
+import firebase_admin
+from firebase_admin import credentials, db
+import tkinter.simpledialog
+import json
 
+cred_obj = credentials.Certificate("C:\\Users\\964030\\Documents\\GitHub\\banoVfinal\\cyberbank-398fd-default-rtdb-export (1).json")
+  
+firebase_admin.initialize_app(cred_obj, {
+    'databaseURL': 'https://cyberbank-398fd-default-rtdb.firebaseio.com/'
+})
+
+#ref = db.reference('/')
 
 class Banco:
     def __init__(self):
-        self.conexao = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='',
-            database='banco_tds0025'
-        )
-        self.cursor = self.conexao.cursor()
-
+        self.usuarios_ref = db.reference('usuarios')
+        self.usuario_logado = False
         self.usuarios = {}
         self.saldo = 0
         self.limite = 0
@@ -22,39 +26,16 @@ class Banco:
         self.LIMITE_SAQUES = 3
         self.chequeI = 0
 
-        self.criar_tabela_usuarios()
-
-    def criar_tabela_usuarios(self):
-        try:
-            self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                nome VARCHAR(50) NOT NULL,
-                cpf VARCHAR(11) UNIQUE NOT NULL,
-                senha VARCHAR(50) NOT NULL,
-                Saldo DOUBLE,
-                ChequeEspecial DOUBLE,
-                ChequeInicial DOUBLE                
-            )
-            """)
-            print("Tabela 'usuarios' criada com sucesso!")
-        except mysql.connector.Error as err:
-            print(f"Erro ao criar tabela: {err}")
-
-        self.usuario_logado = False
-
     def login(self, cpf, senha):
-        query = "SELECT * FROM usuarios WHERE cpf = %s AND senha = %s"
-        valores = (cpf, senha)
+        usuario_ref = self.usuarios_ref.child(cpf)
+        usuario = usuario_ref.get()
 
-        self.cursor.execute(query, valores)
-        usuario = self.cursor.fetchone()
-
-        if usuario:
+        if usuario and usuario['senha'] == senha:
             self.usuario_logado = True
-            self.usuarios = {'cpf': usuario[2]}
-            self.saldo = usuario[4]
-            self.chespecial = usuario[5]  # Atualiza o valor do cheque especial
+            self.usuarios = {'CPF': cpf}
+            self.saldo = usuario['Saldo']
+            self.chespecial = usuario['chequeEspecial']
+            self.chequeI = usuario['chequeI']
             messagebox.showinfo("Login", "Login realizado com sucesso!")
             return True
         else:
@@ -63,15 +44,20 @@ class Banco:
 
     def cadastrar_usuario(self, nome, cpf, senha, saldo):
         try:
-            query = "INSERT INTO usuarios (nome, cpf, senha, Saldo, ChequeEspecial, ChequeInicial) VALUES (%s, %s, %s, %s, %s,%s)"
             self.chequeI = saldo * 4
             self.limite = saldo * 4 + saldo
-            self.cheque = saldo * 4
-            valores = (nome, cpf, senha, saldo, self.cheque, self.chequeI)
-            self.cursor.execute(query, valores)
-            self.conexao.commit()
+            self.chespecial = saldo * 4
+            usuario_data = {
+                'nome': nome,
+                'CPF': cpf,
+                'senha': senha,
+                'Saldo': saldo,
+                'chequeEspecial': self.chespecial,
+                'chequeI': self.chequeI
+            }
+            self.usuarios_ref.child(cpf).set(usuario_data)
             messagebox.showinfo("Cadastro", "Usuário cadastrado com sucesso!")
-        except mysql.connector.Error as err:
+        except Exception as err:
             messagebox.showerror("Erro", f"Erro ao cadastrar usuário: {err}")
 
     def depositar(self, valor):
@@ -80,7 +66,7 @@ class Banco:
                 if self.chespecial < self.chequeI:
                     diferenca = self.chequeI - self.chespecial
                     if valor > diferenca:
-                        self.saldo += valor
+                        self.saldo += valor 
                         self.chespecial += diferenca
                     else:
                         self.chespecial += valor
@@ -89,14 +75,7 @@ class Banco:
                     self.saldo += valor
 
                 self.extrato += f"Depósito: R$ {valor:.2f}\n"
-
-                query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
-                valores = (self.saldo, self.chespecial, self.usuarios.get('cpf'))
-                try:
-                    self.cursor.execute(query, valores)
-                    self.conexao.commit()
-                except mysql.connector.Error as err:
-                    print(f"Erro ao atualizar saldo do usuário: {err}")
+                self.atualizar_usuario()
             else:
                 messagebox.showerror("Erro", "Valor inválido.")
         else:
@@ -104,13 +83,11 @@ class Banco:
 
     def fExtrato(self):
         if self.usuario_logado:
-            query = "SELECT Saldo, ChequeEspecial FROM usuarios WHERE cpf = %s"
-            valores = (self.usuarios.get('cpf'),)
-            try:
-                self.cursor.execute(query, valores)
-                saldo, chequeEspecial = self.cursor.fetchone()
-                self.saldo = saldo
-                self.chespecial = chequeEspecial
+            usuario_ref = self.usuarios_ref.child(self.usuarios.get('CPF'))
+            usuario = usuario_ref.get()
+            if usuario:
+                self.saldo = usuario['Saldo']
+                self.chespecial = usuario['chequeEspecial']
 
                 extrato = f"Saldo atual: R$ {self.saldo:.2f}\n"
                 extrato += f"Cheque Especial disponível: R$ {self.chespecial:.2f}\n"
@@ -118,8 +95,8 @@ class Banco:
                 print("\n================= Extrato ==================")
                 print(extrato)
                 print("============================================")
-            except mysql.connector.Error as err:
-                print(f"Erro ao obter extrato: {err}")
+            else:
+                print("Erro ao obter extrato")
 
     def sacar(self, valor):
         if self.usuario_logado:
@@ -144,15 +121,8 @@ class Banco:
 
                     self.extrato += f"Saque: R$ {valor:.2f}\n"
                     self.numero_saques += 1
-
-                    query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
-                    valores = (self.saldo, self.chespecial, self.usuarios.get('cpf'))
-                    try:
-                        self.cursor.execute(query, valores)
-                        self.conexao.commit()
-                        messagebox.showinfo("Saque", "Saque realizado com sucesso!")
-                    except mysql.connector.Error as err:
-                        print(f"Erro ao atualizar saldo do usuário: {err}")
+                    self.atualizar_usuario()
+                    messagebox.showinfo("Saque", "Saque realizado com sucesso!")
             else:
                 messagebox.showerror("Erro", "Valor de saque inválido.")
         else:
@@ -160,7 +130,7 @@ class Banco:
 
     def sair(self):
         messagebox.showinfo("Sair", "Saindo do sistema.")
-        self.conexao.close()
+        # Não é necessário fechar a conexão com o Firebase como é com MySQL
 
     def transferir(self, destino, valor):
         if self.usuario_logado:
@@ -187,236 +157,178 @@ class Banco:
                             self.saldo -= valor
                     else:
                         self.saldo -= valor
-
                     self.extrato += f"Transferência: R$ {valor:.2f} para CPF: {destino}\n"
-                    query = "UPDATE usuarios SET Saldo = %s, ChequeEspecial = %s WHERE cpf = %s"
-                    valores = (self.saldo, self.chespecial, self.usuarios.get('cpf'))
-                    try:
-                        self.cursor.execute(query, valores)
-                        self.conexao.commit()
+                    self.atualizar_usuario()
+
+                    destino_ref = self.usuarios_ref.child(destino)
+                    usuario_destino = destino_ref.get()
+                    if usuario_destino:
+                        novo_saldo_destino = usuario_destino['Saldo'] + valor
+                        destino_ref.update({'Saldo': novo_saldo_destino})
                         messagebox.showinfo("Transferência", f"Transferência de R$ {valor:.2f} realizada com sucesso para o CPF: {destino}.")
-                    except mysql.connector.Error as err:
-                        print(f"Erro ao atualizar saldo do usuário: {err}")
+                    else:
+                        messagebox.showerror("Erro", "CPF do destinatário não encontrado.")
             else:
                 messagebox.showerror("Erro", "Valor de transferência inválido.")
         else:
             messagebox.showerror("Erro", "Efetue o login para realizar a transferência.")
 
+    def atualizar_usuario(self):
+        cpf = self.usuarios.get('CPF')
+        usuario_ref = self.usuarios_ref.child(cpf)
+        usuario_ref.update({'Saldo': self.saldo, 'chequeEspecial': self.chespecial, 'chequeI': self.chequeI})
 
 class Interface:
     def __init__(self, root, banco):
         self.banco = banco
         self.root = root
-        self.banco = banco
-        self.banco.interface = self
-        self.root.title("CYBER BANK")
+        self.root.title("Banco TDS0025")
+        self.root.geometry("500x500")
 
-        style = ttk.Style()
-        style.configure("TButton", foreground="black", background="#EDE3A1", font=("Century Gothic", 30, "bold"), borderwidth=2, relief="raised", padding=10)
-        root.geometry("800x600")  # Ajuste o tamanho da janela
+        self.imagem_fundo = PhotoImage(file="C:\\Users\\964030\\Documents\\GitHub\\banoVfinal\\logo-removebg-preview.png")
+        self.label_imagem = Label(root, image=self.imagem_fundo)
+        self.label_imagem.pack()
 
-        # Adicionando imagens
-        logo = PhotoImage(file="logo-removebg-preview.png")
-        logo_label = Label(root, image=logo)
-        logo_label.image = logo
-        logo_label.configure(background="#0B294A")
-        logo_label.pack(side="top", padx=10, pady=5, anchor="n")
+        self.cadastrar_tela = ttk.Frame(root)
+        self.login_tela = ttk.Frame(root)
+        self.principal_tela = ttk.Frame(root)
 
-        # Adicionando botões
-        button_logar = ttk.Button(root, text="Logar", command=self.logar)
-        button_logar.pack(side="left", padx=5, pady=5, anchor="nw")
+        self.tela_cadastro()
+        self.tela_login()
+        self.tela_principal()
 
-        button_cadastrar = ttk.Button(root, text="Cadastrar", style="TButton", command=self.cadastrar)
-        button_cadastrar.pack(side="left", padx=5, pady=5, anchor="nw")
+        self.login_tela.pack(fill="both", expand=True)
 
-        button_depositar = ttk.Button(root, text="Depositar", style="TButton", command=self.depositar)
-        button_depositar.pack(side="left", padx=5, pady=5, anchor="nw")
+    def tela_login(self):
+        Label(self.login_tela, text="CPF:").pack()
+        self.cpf_login = ttk.Entry(self.login_tela)
+        self.cpf_login.pack()
 
-        button_sacar = ttk.Button(root, text="Sacar", style="TButton", command=self.sacar)
-        button_sacar.pack(side="left", padx=5, pady=5, anchor="nw")
+        Label(self.login_tela, text="Senha:").pack()
+        self.senha_login = ttk.Entry(self.login_tela, show="*")
+        self.senha_login.pack()
 
-        button_extrato = ttk.Button(root, text="Extrato", style="TButton", command=self.exibir_extrato)
-        button_extrato.pack(side="left", padx=5, pady=5, anchor="nw")
+        self.btn_login = ttk.Button(self.login_tela, text="Login", command=self.fazer_login)
+        self.btn_login.pack()
 
-        button_transferir = ttk.Button(root, text="Transferir", style="TButton", command=self.transferir)
-        button_transferir.pack(side="left", padx=5, pady=5, anchor="nw")
+        self.btn_ir_para_cadastro = ttk.Button(self.login_tela, text="Cadastre-se", command=self.mostrar_tela_cadastro)
+        self.btn_ir_para_cadastro.pack()
 
-        button_sair = ttk.Button(root, text="Sair", style="TButton", command=self.sair)
-        button_sair.pack(side="left", padx=5, pady=5, anchor="nw")
+    def tela_cadastro(self):
+        Label(self.cadastrar_tela, text="Nome:").pack()
+        self.nome_cadastro = ttk.Entry(self.cadastrar_tela)
+        self.nome_cadastro.pack()
 
-    def logar(self):
-        top = tk.Toplevel()
-        top.geometry("300x150")
-        top.title("Logar")
+        Label(self.cadastrar_tela, text="CPF:").pack()
+        self.cpf_cadastro = ttk.Entry(self.cadastrar_tela)
+        self.cpf_cadastro.pack()
 
-        tk.Label(top, text="CPF (apenas números):").pack()
-        cpf_entry = tk.Entry(top)
-        cpf_entry.pack()
+        Label(self.cadastrar_tela, text="Senha:").pack()
+        self.senha_cadastro = ttk.Entry(self.cadastrar_tela, show="*")
+        self.senha_cadastro.pack()
 
-        tk.Label(top, text="Senha:").pack()
-        senha_entry = tk.Entry(top, show="*")
-        senha_entry.pack()
+        Label(self.cadastrar_tela, text="Saldo Inicial:").pack()
+        self.saldo_cadastro = ttk.Entry(self.cadastrar_tela)
+        self.saldo_cadastro.pack()
 
-        def logar():
-            cpf = cpf_entry.get()
-            senha = senha_entry.get()
+        self.btn_cadastrar = ttk.Button(self.cadastrar_tela, text="Cadastrar", command=self.cadastrar_usuario)
+        self.btn_cadastrar.pack()
 
-            if cpf and senha:
-                try:
-                    if self.banco.login(cpf, senha):
-                        top.destroy()
-                except Exception as e:
-                    messagebox.showerror("Erro", str(e))
+        self.btn_ir_para_login = ttk.Button(self.cadastrar_tela, text="Voltar", command=self.mostrar_tela_login)
+        self.btn_ir_para_login.pack()
 
-        tk.Button(top, text="Logar", command=logar).pack(side="top", padx=10, pady=10, anchor="center")
+    def tela_principal(self):
+        self.btn_saldo = ttk.Button(self.principal_tela, text="Ver Saldo", command=self.mostrar_extrato)
+        self.btn_saldo.pack()
 
-    def cadastrar(self):
-        top = tk.Toplevel()
-        top.geometry("450x300")
-        top.title("Cadastrar Usuário")
+        self.btn_sacar = ttk.Button(self.principal_tela, text="Sacar", command=self.sacar)
+        self.btn_sacar.pack()
 
-        tk.Label(top, text="Nome:").pack()
-        nome_entry = tk.Entry(top)
-        nome_entry.pack()
+        self.btn_depositar = ttk.Button(self.principal_tela, text="Depositar", command=self.depositar)
+        self.btn_depositar.pack()
 
-        tk.Label(top, text="CPF (apenas números):").pack()
-        cpf_entry = tk.Entry(top)
-        cpf_entry.pack()
+        self.btn_transferir = ttk.Button(self.principal_tela, text="Transferir", command=self.transferir)
+        self.btn_transferir.pack()
 
-        tk.Label(top, text="Senha:").pack()
-        senha_entry = tk.Entry(top, show="*")
-        senha_entry.pack()
+        self.btn_sair = ttk.Button(self.principal_tela, text="Sair", command=self.sair)
+        self.btn_sair.pack()
 
-        tk.Label(top, text="Saldo Inicial:").pack()
-        saldo_entry = tk.Entry(top)
-        saldo_entry.pack()
+    def mostrar_tela_login(self):
+        self.cadastrar_tela.pack_forget()
+        self.login_tela.pack(fill="both", expand=True)
 
-        def cadastrar_usuario():
-            nome = nome_entry.get()
-            cpf = cpf_entry.get()
-            senha = senha_entry.get()
+    def mostrar_tela_cadastro(self):
+        self.login_tela.pack_forget()
+        self.cadastrar_tela.pack(fill="both", expand=True)
+
+    def mostrar_tela_principal(self):
+        self.login_tela.pack_forget()
+        self.principal_tela.pack(fill="both", expand=True)
+
+    def fazer_login(self):
+        cpf = self.cpf_login.get()
+        senha = self.senha_login.get()
+        if self.banco.login(cpf, senha):
+            self.mostrar_tela_principal()
+
+    def cadastrar_usuario(self):
+        nome = self.nome_cadastro.get()
+        cpf = self.cpf_cadastro.get()
+        senha = self.senha_cadastro.get()
+        saldo = self.saldo_cadastro.get()
+
+        if nome and cpf and senha and saldo:
             try:
-                saldo = float(saldo_entry.get())
+                saldo = float(saldo)
             except ValueError:
-                messagebox.showerror("Erro", "Saldo inválido. Por favor, insira um número válido.")
+                messagebox.showerror("Erro", "Saldo inválido.")
                 return
+            self.banco.cadastrar_usuario(nome, cpf, senha, saldo)
+            self.mostrar_tela_login()
+        else:
+            messagebox.showerror("Erro", "Preencha todos os campos.")
 
-            if nome and cpf and senha and saldo >= 0:
-                try:
-                    self.banco.cadastrar_usuario(nome, cpf, senha, saldo)
-                    messagebox.showinfo("Sucesso", "Usuário cadastrado com sucesso!")
-                    top.destroy()
-                except Exception as e:
-                    messagebox.showerror("Erro", f"Erro ao cadastrar usuário: {str(e)}")
-            else:
-                messagebox.showerror("Erro", "Por favor, preencha todos os campos corretamente.")
-
-        tk.Button(top, text="Cadastrar", command=cadastrar_usuario).pack(side="top", padx=10, pady=10, anchor="center")
-
-    def depositar(self):
-        top = tk.Toplevel()
-        top.geometry("200x150")
-        top.title("Depositar")
-
-        tk.Label(top, text="Valor do depósito:").pack()
-        valor_entry = tk.Entry(top)
-        valor_entry.pack()
-
-        def depositar():
-            if self.banco.usuario_logado:
-                try:
-                    valor = float(valor_entry.get())
-                    self.banco.depositar(valor)
-                    messagebox.showinfo("Depósito", "Depositado com sucesso!")
-                    top.destroy()
-                except ValueError:
-                    messagebox.showerror("Erro", "Valor inválido. Por favor, insira um número válido.")
-            else:
-                messagebox.showinfo("Erro", "Faça login primeiro para realizar um depósito.")
-
-        tk.Button(top, text="Depositar", command=depositar).pack(side="top", padx=10, pady=10, anchor="center")
-
-    def sacar(self):
-        top = tk.Toplevel()
-        top.geometry("200x150")
-        top.title("Sacar")
-
-        tk.Label(top, text="Valor do saque:").pack()
-        valor_entry = tk.Entry(top)
-        valor_entry.pack()
-
-        def sacar():
-            if self.banco.usuario_logado:
-                try:
-                    valor = float(valor_entry.get())
-                    self.banco.sacar(valor)
-                    messagebox.showinfo("Saque", "Saque realizado com sucesso!")
-                    top.destroy()
-                except ValueError:
-                    messagebox.showerror("Erro", "Valor inválido. Por favor, insira um número válido.")
-            else:
-                messagebox.showinfo("Erro", "Faça login primeiro para realizar um saque.")
-
-        tk.Button(top, text="Sacar", command=sacar).pack(side="top", padx=10, pady=10, anchor="center")
-
-    def exibir_extrato(self):
+    def mostrar_extrato(self):
+        self.banco.fExtrato()
         top = tk.Toplevel()
         top.geometry("600x400")
         top.title("Extrato")
 
-        if self.banco.usuario_logado:
-            self.banco.fExtrato()
-            saldo_label = tk.Label(top, text=f"Saldo atual: R$ {self.banco.saldo:.2f}")
-            saldo_label.pack()
+    def sacar(self):
+        valor = self.obter_valor_operacao("Digite o valor do saque:")
+        if valor:
+            self.banco.sacar(valor)
 
-            saldo_especial_label = tk.Label(top, text=f"Cheque Especial disponível: R$ {self.banco.chespecial:.2f}")
-            saldo_especial_label.pack()
+    def depositar(self):
+        valor = self.obter_valor_operacao("Digite o valor do depósito:")
+        if valor:
+            self.banco.depositar(valor)
 
-            extrato_label = tk.Label(top, text="Extrato:")
-            extrato_label.pack()
-
-            extrato_text = tk.Text(top, height=10, width=50)
-            extrato_text.pack()
-
-            extrato_text.insert(tk.END, self.banco.extrato)
-            extrato_text.config(state=tk.DISABLED)
-        else:
-            messagebox.showinfo("Erro", "Faça login primeiro para visualizar o extrato.")
+    def transferir(self):
+        destino = self.obter_cpf_destino("Digite o CPF do destinatário:")
+        valor = self.obter_valor_operacao("Digite o valor da transferência:")
+        if destino and valor:
+            self.banco.transferir(destino, valor)
 
     def sair(self):
         self.banco.sair()
-        self.root.destroy()
+        self.root.quit()
 
-    def transferir(self):
-        top = tk.Toplevel()
-        top.geometry("300x150")
-        top.title("Transferir")
+    def obter_valor_operacao(self, mensagem):
+        valor_str = tk.simpledialog.askstring("Valor", mensagem)
+        try:
+            valor = float(valor_str)
+            return valor
+        except (ValueError, TypeError):
+            messagebox.showerror("Erro", "Valor inválido.")
+            return None
 
-        tk.Label(top, text="CPF do Destinatário (apenas números):").pack()
-        cpf_destino_entry = tk.Entry(top)
-        cpf_destino_entry.pack()
+    def obter_cpf_destino(self, mensagem):
+        return tk.simpledialog.askstring("CPF", mensagem)
 
-        tk.Label(top, text="Valor da Transferência:").pack()
-        valor_entry = tk.Entry(top)
-        valor_entry.pack()
-
-        def transferir():
-            cpf_destino = cpf_destino_entry.get()
-            try:
-                valor = float(valor_entry.get())
-                if cpf_destino and valor >= 0:
-                    self.banco.transferir(cpf_destino, valor)
-                    top.destroy()
-                else:
-                    messagebox.showerror("Erro", "Por favor, preencha todos os campos corretamente.")
-            except ValueError:
-                messagebox.showerror("Erro", "Valor inválido. Por favor, insira um número válido.")
-
-        tk.Button(top, text="Transferir", command=transferir).pack(side="top", padx=10, pady=10, anchor="center")
-
-
-# Criar a janela principal
-root = tk.Tk()
-root.configure(background="#0B294A")
-interface = Interface(root, Banco())
-root.mainloop()
+if __name__ == "__main__":
+    banco = Banco()
+    root = tk.Tk()
+    root.configure(background="#001E3F")
+    app = Interface(root, banco)
+    root.mainloop()
