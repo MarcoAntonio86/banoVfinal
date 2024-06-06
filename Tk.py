@@ -92,11 +92,11 @@ class Banco:
                 extrato = f"Saldo atual: R$ {self.saldo:.2f}\n"
                 extrato += f"Cheque Especial disponível: R$ {self.chespecial:.2f}\n"
                 extrato += self.extrato
-                print("\n================= Extrato ==================")
-                print(extrato)
-                print("============================================")
+                return extrato
             else:
-                print("Erro ao obter extrato")
+                return "Erro ao obter extrato"
+        else:
+            return "Usuário não está logado"
 
     def sacar(self, valor):
         if self.usuario_logado:
@@ -289,10 +289,21 @@ class Interface:
             messagebox.showerror("Erro", "Preencha todos os campos.")
 
     def mostrar_extrato(self):
-        self.banco.fExtrato()
+        extrato = self.banco.fExtrato()
         top = tk.Toplevel()
         top.geometry("600x400")
         top.title("Extrato")
+        
+        # Cria um widget Text para exibir o extrato
+        text_area = tk.Text(top)
+        text_area.pack(fill="both", expand=True)
+        
+        # Insere o extrato no widget Text
+        text_area.insert(tk.END, extrato)
+        
+        # Torna o widget Text apenas para leitura
+        text_area.config(state=tk.DISABLED)
+
 
     def sacar(self):
         valor = self.obter_valor_operacao("Digite o valor do saque:")
